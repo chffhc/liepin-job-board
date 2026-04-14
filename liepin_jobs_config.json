@@ -1,0 +1,32 @@
+{
+  "source_urls": [
+    "https://www.liepin.com/zpneironganquan/",
+    "https://www.liepin.com/zpneironganquanyunying/",
+    "https://www.liepin.com/zpfengkong/",
+    "https://www.liepin.com/zpfengkongyunying/",
+    "https://www.liepin.com/zpfengxianyunying/"
+  ],
+  "max_pages_per_source": 5,
+  "timeout_seconds": 20,
+  "list_request_interval_seconds": 1.0,
+  "detail_request_interval_seconds": 1.0,
+  "company_tag_keywords": [
+    "互联网"
+  ],
+  "title_domain_keywords": [
+    "内容安全",
+    "风控",
+    "风险控制",
+    "风险"
+  ],
+  "required_title_keywords": [
+    "运营",
+    "评估"
+  ],
+  "excluded_company_keywords": [
+    "汇聚众多行业名企"
+  ],
+  "output_dir": "liepin_output",
+  "database_path": "liepin_output/liepin_jobs.sqlite3",
+  "site_dir": "docs"
+}
