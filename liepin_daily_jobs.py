@@ -17,7 +17,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
@@ -45,6 +45,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "output_dir": "liepin_output",
     "database_path": "liepin_output/liepin_jobs.sqlite3",
     "site_dir": "liepin_site",
+    "recent_update_window_days": 14,
     "user_agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -387,24 +388,44 @@ def write_summary(
     run_date: str,
     crawled_pages: list[str],
     all_jobs: list[dict[str, Any]],
-    today_new_jobs: list[dict[str, Any]],
+    first_seen_new_jobs: list[dict[str, Any]],
+    snapshot_new_jobs: list[dict[str, Any]],
+    recent_update_jobs: list[dict[str, Any]],
+    today_updated_jobs: list[dict[str, Any]],
+    recent_window_days: int,
 ) -> None:
     lines = [
         f"# 猎聘增量抓取日报 - {run_date}",
         "",
         f"- 当前命中岗位数：{len(all_jobs)}",
-        f"- 今日累计新增岗位数：{len(today_new_jobs)}",
+        f"- 今日首次发现岗位数：{len(first_seen_new_jobs)}",
+        f"- 相对昨日新增岗位数：{len(snapshot_new_jobs)}",
+        f"- 今日更新岗位数：{len(today_updated_jobs)}",
+        f"- 近{recent_window_days}天更新岗位数：{len(recent_update_jobs)}",
         f"- 抓取页数：{len(crawled_pages)}",
         "",
         "## 已抓取页面",
     ]
     lines.extend(f"- {url}" for url in crawled_pages)
     lines.append("")
-    lines.append("## 今日累计新增")
-    if not today_new_jobs:
-        lines.append("- 今天没有发现新的目标岗位。")
+
+    lines.append("## 相对昨日新增")
+    if not snapshot_new_jobs:
+        lines.append("- 今天相对昨天没有新增进入快照的目标岗位。")
     else:
-        for job in today_new_jobs:
+        for job in snapshot_new_jobs:
+            lines.append(
+                "- {company_name} | {title} | {location} | {salary} | {detail_update_time} | {job_url}".format(
+                    **job
+                )
+            )
+
+    lines.append("")
+    lines.append(f"## 近{recent_window_days}天更新")
+    if not recent_update_jobs:
+        lines.append(f"- 最近{recent_window_days}天没有命中的新鲜岗位。")
+    else:
+        for job in recent_update_jobs[:50]:
             lines.append(
                 "- {company_name} | {title} | {location} | {salary} | {detail_update_time} | {job_url}".format(
                     **job
@@ -439,6 +460,120 @@ def load_jobs_first_seen_on(conn: sqlite3.Connection, date_prefix: str) -> list[
         (f"{date_prefix}%",),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def parse_update_date(update_label: str, run_day: date) -> date | None:
+    label = normalize_text(update_label)
+    if not label:
+        return None
+    if "今日更新" in label:
+        return run_day
+
+    match = re.search(r"(\d+)天前更新", label)
+    if match:
+        return run_day - timedelta(days=int(match.group(1)))
+
+    match = re.search(r"(\d+)月(\d+)日更新", label)
+    if match:
+        month = int(match.group(1))
+        day = int(match.group(2))
+        year = run_day.year
+        candidate = date(year, month, day)
+        if candidate > run_day + timedelta(days=1):
+            candidate = date(year - 1, month, day)
+        return candidate
+    return None
+
+
+def job_priority_score(title: str) -> int:
+    score = 0
+    rules = [
+        ("产品运营", 6),
+        ("策略运营", 6),
+        ("风控运营", 5),
+        ("风险运营", 5),
+        ("评估", 5),
+        ("治理", 4),
+        ("内容安全", 4),
+        ("风控", 3),
+        ("风险", 2),
+    ]
+    for keyword, weight in rules:
+        if keyword in title:
+            score += weight
+    return score
+
+
+def sort_jobs_for_display(rows: list[dict[str, Any]], run_day: date) -> list[dict[str, Any]]:
+    def sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        update_date = parse_update_date(row.get("detail_update_time", ""), run_day)
+        days_since = (run_day - update_date).days if update_date else 9999
+        return (
+            days_since,
+            -job_priority_score(row.get("title", "")),
+            row.get("company_name", ""),
+            row.get("title", ""),
+            row.get("location", ""),
+        )
+
+    return sorted(rows, key=sort_key)
+
+
+def load_snapshot_keys(conn: sqlite3.Connection, run_date: str) -> set[str]:
+    rows = conn.execute(
+        "SELECT job_key FROM daily_jobs WHERE run_date = ?",
+        (run_date,),
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def load_previous_run_date(conn: sqlite3.Connection, run_date: str) -> str | None:
+    row = conn.execute(
+        """
+        SELECT MAX(run_date)
+        FROM daily_jobs
+        WHERE run_date < ?
+        """,
+        (run_date,),
+    ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def pick_snapshot_new_jobs(
+    matched_jobs: list[dict[str, Any]],
+    previous_snapshot_keys: set[str],
+    run_day: date,
+) -> list[dict[str, Any]]:
+    rows = [job for job in matched_jobs if job["job_key"] not in previous_snapshot_keys]
+    return sort_jobs_for_display(rows, run_day)
+
+
+def pick_recent_update_jobs(
+    matched_jobs: list[dict[str, Any]],
+    run_day: date,
+    window_days: int,
+) -> list[dict[str, Any]]:
+    rows = []
+    for job in matched_jobs:
+        update_date = parse_update_date(job.get("detail_update_time", ""), run_day)
+        if update_date is None:
+            continue
+        days_since = (run_day - update_date).days
+        if 0 <= days_since <= window_days:
+            rows.append({**job, "_update_date": update_date.isoformat(), "_days_since_update": days_since})
+    return sort_jobs_for_display(rows, run_day)
+
+
+def pick_today_updated_jobs(
+    matched_jobs: list[dict[str, Any]],
+    run_day: date,
+) -> list[dict[str, Any]]:
+    rows = []
+    for job in matched_jobs:
+        update_date = parse_update_date(job.get("detail_update_time", ""), run_day)
+        if update_date == run_day:
+            rows.append({**job, "_update_date": update_date.isoformat(), "_days_since_update": 0})
+    return sort_jobs_for_display(rows, run_day)
 
 
 def refresh_daily_snapshot(conn: sqlite3.Connection, run_date: str, jobs: list[dict[str, Any]]) -> None:
@@ -524,6 +659,34 @@ def top_counts(rows: list[dict[str, Any]], field: str, limit: int = 8) -> list[d
     return [{"label": label, "count": count} for label, count in counter.most_common(limit)]
 
 
+def enrich_history_with_snapshot_deltas(
+    history: list[dict[str, Any]],
+    daily_snapshots: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    ordered_dates = sorted(daily_snapshots.keys())
+    snapshot_key_map = {
+        run_date: {row["job_key"] for row in rows}
+        for run_date, rows in daily_snapshots.items()
+    }
+    previous_date_map: dict[str, str | None] = {}
+    for index, run_date in enumerate(ordered_dates):
+        previous_date_map[run_date] = ordered_dates[index - 1] if index > 0 else None
+
+    for row in history:
+        run_date = row["run_date"]
+        previous_date = previous_date_map.get(run_date)
+        current_keys = snapshot_key_map.get(run_date, set())
+        previous_keys = snapshot_key_map.get(previous_date, set()) if previous_date else set()
+        enriched.append(
+            {
+                **row,
+                "snapshot_new_count": len(current_keys - previous_keys) if previous_date else len(current_keys),
+            }
+        )
+    return enriched
+
+
 def json_for_script(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
 
@@ -533,26 +696,35 @@ def write_dashboard(
     run_time: str,
     crawled_pages: list[str],
     all_jobs: list[dict[str, Any]],
-    today_new_jobs: list[dict[str, Any]],
-    current_run_new_count: int,
+    first_seen_new_jobs: list[dict[str, Any]],
+    snapshot_new_jobs: list[dict[str, Any]],
+    recent_update_jobs: list[dict[str, Any]],
+    today_updated_jobs: list[dict[str, Any]],
     latest_snapshot_name: str,
     latest_new_jobs_name: str,
     latest_summary_name: str,
     history: list[dict[str, Any]],
     daily_snapshots: dict[str, list[dict[str, Any]]],
+    recent_window_days: int,
 ) -> None:
     ensure_dir(path.parent)
 
     dashboard_payload = {
-        "todayNewJobs": today_new_jobs,
+        "firstSeenNewJobs": first_seen_new_jobs,
+        "snapshotNewJobs": snapshot_new_jobs,
+        "recentUpdateJobs": recent_update_jobs,
+        "todayUpdatedJobs": today_updated_jobs,
         "allJobs": all_jobs,
         "history": history,
         "dailySnapshots": daily_snapshots,
+        "recentWindowDays": recent_window_days,
         "sources": crawled_pages,
         "stats": {
             "matchedCount": len(all_jobs),
-            "todayNewCount": len(today_new_jobs),
-            "currentRunNewCount": current_run_new_count,
+            "firstSeenNewCount": len(first_seen_new_jobs),
+            "snapshotNewCount": len(snapshot_new_jobs),
+            "recentUpdateCount": len(recent_update_jobs),
+            "todayUpdatedCount": len(today_updated_jobs),
             "runTime": run_time,
             "topCompanies": top_counts(all_jobs, "company_name"),
             "topCities": top_counts(all_jobs, "location"),
@@ -888,10 +1060,12 @@ def write_dashboard(
       <div class="eyebrow">Liepin Watchboard</div>
       <h1>内容安全 / 风控 运营岗位看板</h1>
       <p class="subtitle">
-        每次自动运行后，这个页面会同步更新。上半区看当天累计新增，下半区可以切到当前命中的全量快照，并按公司、岗位、城市关键词即时筛选。
+        每次自动运行后，这个页面会同步更新。默认优先展示最近更新的岗位内容，同时保留相对昨日新增、首次发现新增、当前全量快照和历史日期快照。
       </p>
       <div class="links">
-        <a href="{latest_new_jobs_name}">下载今日新增 CSV</a>
+        <a href="liepin_recent_updates_latest.csv">下载最近更新 CSV</a>
+        <a href="liepin_snapshot_new_latest.csv">下载相对昨日新增 CSV</a>
+        <a href="{latest_new_jobs_name}">下载首次发现新增 CSV</a>
         <a href="{latest_snapshot_name}">下载当前快照 CSV</a>
         <a href="{latest_summary_name}">查看摘要 Markdown</a>
       </div>
@@ -904,14 +1078,19 @@ def write_dashboard(
         <div class="stat-note">公开页过滤后的当前可见岗位数</div>
       </article>
       <article class="card stat">
-        <div class="stat-label">今日累计新增</div>
-        <div class="stat-value" id="today-new-count">0</div>
-        <div class="stat-note">按 SQLite 首次发现时间累计</div>
+        <div class="stat-label">近14天更新</div>
+        <div class="stat-value" id="recent-update-count">0</div>
+        <div class="stat-note">你每天最值得先看的新鲜岗位池</div>
       </article>
       <article class="card stat">
-        <div class="stat-label">本次执行新增</div>
-        <div class="stat-value" id="current-run-new-count">0</div>
-        <div class="stat-note">同一天重复执行时通常会归零</div>
+        <div class="stat-label">今日更新</div>
+        <div class="stat-value" id="today-updated-count">0</div>
+        <div class="stat-note">职位详情页显示为“今日更新”的岗位</div>
+      </article>
+      <article class="card stat">
+        <div class="stat-label">相对昨日新增</div>
+        <div class="stat-value" id="snapshot-new-count">0</div>
+        <div class="stat-note">今天快照里有、昨天快照里没有</div>
       </article>
       <article class="card stat">
         <div class="stat-label">最后更新时间</div>
@@ -934,7 +1113,9 @@ def write_dashboard(
         </div>
         <div class="toolbar">
           <div class="tabs">
-            <button class="tab active" data-view="today">今日累计新增</button>
+            <button class="tab active" data-view="recent">最近更新</button>
+            <button class="tab" data-view="snapshot">相对昨日新增</button>
+            <button class="tab" data-view="first_seen">首次发现新增</button>
             <button class="tab" data-view="all">当前全量快照</button>
             <button class="tab" data-view="history">历史日期快照</button>
           </div>
@@ -952,7 +1133,7 @@ def write_dashboard(
                 <th>岗位</th>
                 <th>公司</th>
                 <th>地点 / 薪资</th>
-                <th>更新时间</th>
+                <th>新鲜度</th>
               </tr>
             </thead>
             <tbody id="job-table-body"></tbody>
@@ -989,7 +1170,7 @@ def write_dashboard(
               <tr>
                 <th>日期</th>
                 <th>当日快照存量</th>
-                <th>当日累计新增</th>
+                <th>相对昨日新增</th>
                 <th>当日最后刷新时间</th>
               </tr>
             </thead>
@@ -1011,14 +1192,18 @@ def write_dashboard(
   <script>
     const DATA = {json_for_script(dashboard_payload)};
     const state = {{
-      view: "today",
+      view: "recent",
       query: "",
       historyDate: DATA.history.length ? DATA.history[0].run_date : ""
     }};
 
     const formatMeta = (rows) => {{
-      const label = state.view === "today"
-        ? "今日累计新增"
+      const label = state.view === "recent"
+        ? `近${{DATA.recentWindowDays}}天更新`
+        : state.view === "snapshot"
+          ? "相对昨日新增"
+          : state.view === "first_seen"
+            ? "首次发现新增"
         : state.view === "all"
           ? "当前全量快照"
           : `历史日期快照：${{state.historyDate || "未选择"}}`;
@@ -1041,7 +1226,13 @@ def write_dashboard(
     }};
 
     const getRows = () => {{
-      let base = DATA.todayNewJobs;
+      let base = DATA.recentUpdateJobs;
+      if (state.view === "snapshot") {{
+        base = DATA.snapshotNewJobs;
+      }}
+      if (state.view === "first_seen") {{
+        base = DATA.firstSeenNewJobs;
+      }}
       if (state.view === "all") {{
         base = DATA.allJobs;
       }}
@@ -1092,7 +1283,7 @@ def write_dashboard(
       const select = document.getElementById("history-date-select");
       const options = DATA.history.map((row) => `
         <option value="${{row.run_date}}" ${{row.run_date === state.historyDate ? "selected" : ""}}>
-          ${{row.run_date}} · 存量${{row.matched_count}} · 新增${{row.today_new_count}}
+          ${{row.run_date}} · 存量${{row.matched_count}} · 昨日差异${{row.snapshot_new_count || 0}}
         </option>
       `).join("");
 
@@ -1106,7 +1297,7 @@ def write_dashboard(
             <span>${{row.matched_count}} 条</span>
           </div>
           <div class="history-bottom">
-            <span>新增 ${{row.today_new_count}}</span>
+            <span>昨日差异 ${{row.snapshot_new_count || 0}}</span>
             <span>${{row.run_time.split("T")[1] || row.run_time}}</span>
           </div>
         </button>
@@ -1129,7 +1320,7 @@ def write_dashboard(
         <tr>
           <td>${{row.run_date}}</td>
           <td>${{row.matched_count}}</td>
-          <td>${{row.today_new_count}}</td>
+          <td>${{row.snapshot_new_count || 0}}</td>
           <td>${{row.run_time}}</td>
         </tr>
       `).join("");
@@ -1149,8 +1340,9 @@ def write_dashboard(
 
     const renderHeader = () => {{
       document.getElementById("matched-count").textContent = DATA.stats.matchedCount;
-      document.getElementById("today-new-count").textContent = DATA.stats.todayNewCount;
-      document.getElementById("current-run-new-count").textContent = DATA.stats.currentRunNewCount;
+      document.getElementById("recent-update-count").textContent = DATA.stats.recentUpdateCount;
+      document.getElementById("today-updated-count").textContent = DATA.stats.todayUpdatedCount;
+      document.getElementById("snapshot-new-count").textContent = DATA.stats.snapshotNewCount;
       document.getElementById("run-time").textContent = DATA.stats.runTime;
       renderChips("company-chips", DATA.stats.topCompanies);
       renderChips("city-chips", DATA.stats.topCities);
@@ -1198,6 +1390,7 @@ def run(config: dict[str, Any], override_max_pages: int | None = None) -> dict[s
     run_day = run_dt.date().isoformat()
     run_date = run_dt.strftime("%Y%m%d")
     max_pages = override_max_pages or int(config["max_pages_per_source"])
+    recent_window_days = int(config["recent_update_window_days"])
 
     session = build_session(config["user_agent"])
     crawled_pages: list[str] = []
@@ -1235,6 +1428,9 @@ def run(config: dict[str, Any], override_max_pages: int | None = None) -> dict[s
 
     current_run_new_jobs: list[dict[str, Any]] = []
     try:
+        previous_run_date = load_previous_run_date(conn, run_day)
+        previous_snapshot_keys = load_snapshot_keys(conn, previous_run_date) if previous_run_date else set()
+
         for job in matched_jobs:
             is_new = upsert_job(conn, job, run_time)
             job["first_seen_at"] = run_time if is_new else conn.execute(
@@ -1244,7 +1440,10 @@ def run(config: dict[str, Any], override_max_pages: int | None = None) -> dict[s
             job["last_seen_at"] = run_time
             if is_new:
                 current_run_new_jobs.append(job)
-        today_new_jobs = load_jobs_first_seen_on(conn, run_day)
+        first_seen_new_jobs = load_jobs_first_seen_on(conn, run_day)
+        snapshot_new_jobs = pick_snapshot_new_jobs(matched_jobs, previous_snapshot_keys, run_dt.date())
+        recent_update_jobs = pick_recent_update_jobs(matched_jobs, run_dt.date(), recent_window_days)
+        today_updated_jobs = pick_today_updated_jobs(matched_jobs, run_dt.date())
         refresh_daily_snapshot(conn, run_day, matched_jobs)
         record_run(
             conn,
@@ -1252,51 +1451,90 @@ def run(config: dict[str, Any], override_max_pages: int | None = None) -> dict[s
             run_date=run_day,
             matched_count=len(matched_jobs),
             current_run_new_count=len(current_run_new_jobs),
-            today_new_count=len(today_new_jobs),
+            today_new_count=len(first_seen_new_jobs),
         )
         conn.commit()
-        history = load_run_history(conn, limit_days=30)
         daily_snapshots = load_daily_snapshots(conn, limit_days=30)
+        history = enrich_history_with_snapshot_deltas(
+            load_run_history(conn, limit_days=30),
+            daily_snapshots,
+        )
     finally:
         conn.close()
 
     matched_jobs.sort(key=lambda item: (item["company_name"], item["title"]))
     current_run_new_jobs.sort(key=lambda item: (item["company_name"], item["title"]))
+    first_seen_new_jobs = sort_jobs_for_display(first_seen_new_jobs, run_dt.date())
 
     snapshot_path = config["output_dir"] / f"liepin_snapshot_{run_date}.csv"
     new_jobs_path = config["output_dir"] / f"liepin_new_jobs_{run_date}.csv"
     summary_path = config["output_dir"] / f"liepin_summary_{run_date}.md"
+    snapshot_new_path = config["output_dir"] / f"liepin_snapshot_new_{run_date}.csv"
+    recent_updates_path = config["output_dir"] / f"liepin_recent_updates_{run_date}.csv"
     latest_snapshot_path = config["output_dir"] / "liepin_snapshot_latest.csv"
     latest_new_jobs_path = config["output_dir"] / "liepin_new_jobs_latest.csv"
     latest_summary_path = config["output_dir"] / "liepin_summary_latest.md"
+    latest_snapshot_new_path = config["output_dir"] / "liepin_snapshot_new_latest.csv"
+    latest_recent_updates_path = config["output_dir"] / "liepin_recent_updates_latest.csv"
     dashboard_path = config["output_dir"] / "liepin_dashboard.html"
     site_index_path = config["site_dir"] / "index.html"
     site_snapshot_path = config["site_dir"] / latest_snapshot_path.name
     site_new_jobs_path = config["site_dir"] / latest_new_jobs_path.name
     site_summary_path = config["site_dir"] / latest_summary_path.name
+    site_snapshot_new_path = config["site_dir"] / latest_snapshot_new_path.name
+    site_recent_updates_path = config["site_dir"] / latest_recent_updates_path.name
 
     write_csv(snapshot_path, matched_jobs)
-    write_csv(new_jobs_path, today_new_jobs)
-    write_summary(summary_path, run_date, crawled_pages, matched_jobs, today_new_jobs)
+    write_csv(new_jobs_path, first_seen_new_jobs)
+    write_csv(snapshot_new_path, snapshot_new_jobs)
+    write_csv(recent_updates_path, recent_update_jobs)
+    write_summary(
+        summary_path,
+        run_date,
+        crawled_pages,
+        matched_jobs,
+        first_seen_new_jobs,
+        snapshot_new_jobs,
+        recent_update_jobs,
+        today_updated_jobs,
+        recent_window_days,
+    )
     write_csv(latest_snapshot_path, matched_jobs)
-    write_csv(latest_new_jobs_path, today_new_jobs)
-    write_summary(latest_summary_path, run_date, crawled_pages, matched_jobs, today_new_jobs)
+    write_csv(latest_new_jobs_path, first_seen_new_jobs)
+    write_csv(latest_snapshot_new_path, snapshot_new_jobs)
+    write_csv(latest_recent_updates_path, recent_update_jobs)
+    write_summary(
+        latest_summary_path,
+        run_date,
+        crawled_pages,
+        matched_jobs,
+        first_seen_new_jobs,
+        snapshot_new_jobs,
+        recent_update_jobs,
+        today_updated_jobs,
+        recent_window_days,
+    )
     write_dashboard(
         dashboard_path,
         run_time=run_time,
         crawled_pages=crawled_pages,
         all_jobs=matched_jobs,
-        today_new_jobs=today_new_jobs,
-        current_run_new_count=len(current_run_new_jobs),
+        first_seen_new_jobs=first_seen_new_jobs,
+        snapshot_new_jobs=snapshot_new_jobs,
+        recent_update_jobs=recent_update_jobs,
+        today_updated_jobs=today_updated_jobs,
         latest_snapshot_name=latest_snapshot_path.name,
         latest_new_jobs_name=latest_new_jobs_path.name,
         latest_summary_name=latest_summary_path.name,
         history=history,
         daily_snapshots=daily_snapshots,
+        recent_window_days=recent_window_days,
     )
     shutil.copy2(latest_snapshot_path, site_snapshot_path)
     shutil.copy2(latest_new_jobs_path, site_new_jobs_path)
     shutil.copy2(latest_summary_path, site_summary_path)
+    shutil.copy2(latest_snapshot_new_path, site_snapshot_new_path)
+    shutil.copy2(latest_recent_updates_path, site_recent_updates_path)
     shutil.copy2(dashboard_path, site_index_path)
 
     return {
@@ -1307,11 +1545,16 @@ def run(config: dict[str, Any], override_max_pages: int | None = None) -> dict[s
         "latest_snapshot_path": str(latest_snapshot_path),
         "latest_new_jobs_path": str(latest_new_jobs_path),
         "latest_summary_path": str(latest_summary_path),
+        "latest_snapshot_new_path": str(latest_snapshot_new_path),
+        "latest_recent_updates_path": str(latest_recent_updates_path),
         "dashboard_path": str(dashboard_path),
         "site_index_path": str(site_index_path),
         "matched_count": len(matched_jobs),
         "current_run_new_count": len(current_run_new_jobs),
-        "today_new_count": len(today_new_jobs),
+        "today_new_count": len(first_seen_new_jobs),
+        "snapshot_new_count": len(snapshot_new_jobs),
+        "recent_update_count": len(recent_update_jobs),
+        "today_updated_count": len(today_updated_jobs),
         "crawled_pages": crawled_pages,
     }
 
