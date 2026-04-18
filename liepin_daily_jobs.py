@@ -539,6 +539,46 @@ def load_previous_run_date(conn: sqlite3.Connection, run_date: str) -> str | Non
     return row[0] if row and row[0] else None
 
 
+def load_latest_run_stats(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT run_date, run_time, matched_count
+        FROM runs
+        ORDER BY run_time DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if not row:
+        return None
+    return {"run_date": row[0], "run_time": row[1], "matched_count": row[2]}
+
+
+def guard_snapshot_health(
+    current_count: int,
+    latest_stats: dict[str, Any] | None,
+    config: dict[str, Any],
+) -> None:
+    minimum_count = int(config.get("min_allowed_snapshot_count", 0))
+    minimum_ratio = float(config.get("min_allowed_snapshot_ratio", 0))
+
+    if latest_stats is None:
+        if current_count < minimum_count:
+            raise RuntimeError(
+                f"抓取结果过低：当前 {current_count} < 最低保护阈值 {minimum_count}。"
+            )
+        return
+
+    previous_count = int(latest_stats["matched_count"])
+    ratio_floor = int(previous_count * minimum_ratio)
+    required_minimum = max(minimum_count, ratio_floor)
+    if current_count < required_minimum:
+        raise RuntimeError(
+            "抓取结果疑似异常，已停止覆盖线上数据："
+            f" 当前 {current_count}，上次 {previous_count}，"
+            f" 最低允许 {required_minimum}。"
+        )
+
+
 def pick_snapshot_new_jobs(
     matched_jobs: list[dict[str, Any]],
     previous_snapshot_keys: set[str],
@@ -949,6 +989,20 @@ def write_dashboard(
       background: rgba(255,255,255,0.82);
       color: var(--ink);
     }}
+    .filter-row {{
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }}
+    .filter-row select {{
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font: inherit;
+      background: rgba(255,255,255,0.82);
+      color: var(--ink);
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;
@@ -1123,8 +1177,38 @@ def write_dashboard(
             <select id="history-date-select" disabled>
               <option value="">选择历史日期</option>
             </select>
+            <select id="sort-select">
+              <option value="fresh">按新鲜度排序</option>
+              <option value="salary_desc">按薪资从高到低</option>
+              <option value="salary_asc">按薪资从低到高</option>
+              <option value="company">按公司排序</option>
+              <option value="location">按地点排序</option>
+              <option value="first_seen_desc">按首次发现时间排序</option>
+            </select>
             <input id="search" type="search" placeholder="搜索公司、岗位、城市、行业标签" />
           </div>
+        </div>
+        <div class="filter-row">
+          <select id="company-filter">
+            <option value="">全部公司</option>
+          </select>
+          <select id="city-filter">
+            <option value="">全部地点</option>
+          </select>
+          <select id="domain-filter">
+            <option value="">全部方向</option>
+            <option value="内容安全">内容安全</option>
+            <option value="风控">风控</option>
+            <option value="风险">风险</option>
+            <option value="评估">评估</option>
+          </select>
+          <select id="freshness-filter">
+            <option value="all">全部更新时间</option>
+            <option value="today">仅今日更新</option>
+            <option value="7">近7天更新</option>
+            <option value="14">近14天更新</option>
+            <option value="older">14天前更新</option>
+          </select>
         </div>
         <div style="overflow:auto">
           <table>
@@ -1191,10 +1275,75 @@ def write_dashboard(
 
   <script>
     const DATA = {json_for_script(dashboard_payload)};
+    const RUN_DATE = DATA.stats.runTime.slice(0, 10);
     const state = {{
       view: "recent",
       query: "",
-      historyDate: DATA.history.length ? DATA.history[0].run_date : ""
+      historyDate: DATA.history.length ? DATA.history[0].run_date : "",
+      sort: "fresh",
+      filters: {{
+        company: "",
+        city: "",
+        domain: "",
+        freshness: "all"
+      }}
+    }};
+
+    const parseUpdateDate = (label) => {{
+      if (!label) return null;
+      if (label.includes("今日更新")) return new Date(`${{RUN_DATE}}T00:00:00`);
+
+      const daysAgo = label.match(/(\\d+)天前更新/);
+      if (daysAgo) {{
+        const d = new Date(`${{RUN_DATE}}T00:00:00`);
+        d.setDate(d.getDate() - Number(daysAgo[1]));
+        return d;
+      }}
+
+      const monthDay = label.match(/(\\d+)月(\\d+)日更新/);
+      if (monthDay) {{
+        const d = new Date(`${{RUN_DATE}}T00:00:00`);
+        const candidate = new Date(d.getFullYear(), Number(monthDay[1]) - 1, Number(monthDay[2]));
+        if (candidate.getTime() > d.getTime() + 24 * 3600 * 1000) {{
+          candidate.setFullYear(candidate.getFullYear() - 1);
+        }}
+        return candidate;
+      }}
+      return null;
+    }};
+
+    const daysSinceUpdate = (label) => {{
+      const parsed = parseUpdateDate(label);
+      if (!parsed) return 9999;
+      const runDate = new Date(`${{RUN_DATE}}T00:00:00`);
+      return Math.floor((runDate.getTime() - parsed.getTime()) / (24 * 3600 * 1000));
+    }};
+
+    const parseSalaryValue = (label) => {{
+      if (!label) return -1;
+      const match = label.match(/(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)k/i);
+      if (match) return Number(match[2]);
+      const single = label.match(/(\\d+(?:\\.\\d+)?)k/i);
+      if (single) return Number(single[1]);
+      return -1;
+    }};
+
+    const titlePriority = (title) => {{
+      let score = 0;
+      [
+        ["产品运营", 6],
+        ["策略运营", 6],
+        ["风控运营", 5],
+        ["风险运营", 5],
+        ["评估", 5],
+        ["治理", 4],
+        ["内容安全", 4],
+        ["风控", 3],
+        ["风险", 2]
+      ].forEach(([keyword, weight]) => {{
+        if ((title || "").includes(keyword)) score += weight;
+      }});
+      return score;
     }};
 
     const formatMeta = (rows) => {{
@@ -1225,6 +1374,49 @@ def write_dashboard(
       return haystack.includes(query);
     }};
 
+    const rowMatchesFilters = (row) => {{
+      if (state.filters.company && row.company_name !== state.filters.company) return false;
+      if (state.filters.city && row.location !== state.filters.city) return false;
+      if (state.filters.domain && !(row.title || "").includes(state.filters.domain)) return false;
+
+      const age = daysSinceUpdate(row.detail_update_time || "");
+      if (state.filters.freshness === "today" && age !== 0) return false;
+      if (state.filters.freshness === "7" && age > 7) return false;
+      if (state.filters.freshness === "14" && age > 14) return false;
+      if (state.filters.freshness === "older" && age <= 14) return false;
+      return true;
+    }};
+
+    const sortRows = (rows) => {{
+      const sorted = [...rows];
+      sorted.sort((a, b) => {{
+        if (state.sort === "salary_desc") {{
+          return parseSalaryValue(b.salary) - parseSalaryValue(a.salary);
+        }}
+        if (state.sort === "salary_asc") {{
+          return parseSalaryValue(a.salary) - parseSalaryValue(b.salary);
+        }}
+        if (state.sort === "company") {{
+          return (a.company_name || "").localeCompare(b.company_name || "", "zh-Hans-CN");
+        }}
+        if (state.sort === "location") {{
+          return (a.location || "").localeCompare(b.location || "", "zh-Hans-CN");
+        }}
+        if (state.sort === "first_seen_desc") {{
+          return (b.first_seen_at || "").localeCompare(a.first_seen_at || "");
+        }}
+
+        const freshness = daysSinceUpdate(a.detail_update_time || "") - daysSinceUpdate(b.detail_update_time || "");
+        if (freshness !== 0) return freshness;
+
+        const priority = titlePriority(b.title || "") - titlePriority(a.title || "");
+        if (priority !== 0) return priority;
+
+        return (a.company_name || "").localeCompare(b.company_name || "", "zh-Hans-CN");
+      }});
+      return sorted;
+    }};
+
     const getRows = () => {{
       let base = DATA.recentUpdateJobs;
       if (state.view === "snapshot") {{
@@ -1240,7 +1432,7 @@ def write_dashboard(
         base = DATA.dailySnapshots[state.historyDate] || [];
       }}
       const query = state.query.trim().toLowerCase();
-      return base.filter((row) => matchRow(row, query));
+      return sortRows(base.filter((row) => matchRow(row, query) && rowMatchesFilters(row)));
     }};
 
     const renderRows = () => {{
@@ -1333,6 +1525,27 @@ def write_dashboard(
       `).join("");
     }};
 
+    const uniqueOptions = (rows, field) => {{
+      return [...new Set(rows.map((row) => row[field]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    }};
+
+    const renderFilterOptions = () => {{
+      const companySelect = document.getElementById("company-filter");
+      const citySelect = document.getElementById("city-filter");
+      const baseRows = DATA.allJobs;
+      const companyOptions = uniqueOptions(baseRows, "company_name");
+      const cityOptions = uniqueOptions(baseRows, "location");
+      companySelect.innerHTML = `<option value="">全部公司</option>` + companyOptions.map((v) =>
+        `<option value="${{v}}" ${{v === state.filters.company ? "selected" : ""}}>${{v}}</option>`
+      ).join("");
+      citySelect.innerHTML = `<option value="">全部地点</option>` + cityOptions.map((v) =>
+        `<option value="${{v}}" ${{v === state.filters.city ? "selected" : ""}}>${{v}}</option>`
+      ).join("");
+      document.getElementById("domain-filter").value = state.filters.domain;
+      document.getElementById("freshness-filter").value = state.filters.freshness;
+      document.getElementById("sort-select").value = state.sort;
+    }};
+
     const renderSources = () => {{
       const el = document.getElementById("source-list");
       el.innerHTML = DATA.sources.map((url) => `<li><a href="${{url}}" target="_blank" rel="noreferrer">${{url}}</a></li>`).join("");
@@ -1347,6 +1560,7 @@ def write_dashboard(
       renderChips("company-chips", DATA.stats.topCompanies);
       renderChips("city-chips", DATA.stats.topCities);
       renderSources();
+      renderFilterOptions();
       renderHistoryControls();
       renderHistoryTable();
     }};
@@ -1368,6 +1582,31 @@ def write_dashboard(
 
     document.getElementById("search").addEventListener("input", (event) => {{
       state.query = event.target.value;
+      renderRows();
+    }});
+
+    document.getElementById("sort-select").addEventListener("change", (event) => {{
+      state.sort = event.target.value;
+      renderRows();
+    }});
+
+    document.getElementById("company-filter").addEventListener("change", (event) => {{
+      state.filters.company = event.target.value;
+      renderRows();
+    }});
+
+    document.getElementById("city-filter").addEventListener("change", (event) => {{
+      state.filters.city = event.target.value;
+      renderRows();
+    }});
+
+    document.getElementById("domain-filter").addEventListener("change", (event) => {{
+      state.filters.domain = event.target.value;
+      renderRows();
+    }});
+
+    document.getElementById("freshness-filter").addEventListener("change", (event) => {{
+      state.filters.freshness = event.target.value;
       renderRows();
     }});
 
@@ -1415,6 +1654,17 @@ def run(config: dict[str, Any], override_max_pages: int | None = None) -> dict[s
             time.sleep(float(config["list_request_interval_seconds"]))
 
     matched_jobs = dedupe_jobs(matched_jobs)
+
+    guard_conn = sqlite3.connect(config["database_path"])
+    try:
+        init_db(guard_conn)
+        guard_snapshot_health(
+            current_count=len(matched_jobs),
+            latest_stats=load_latest_run_stats(guard_conn),
+            config=config,
+        )
+    finally:
+        guard_conn.close()
 
     for index, job in enumerate(matched_jobs):
         detail_html = fetch_text(session, job["job_url"], config["timeout_seconds"])

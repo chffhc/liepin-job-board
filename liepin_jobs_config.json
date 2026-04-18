@@ -28,5 +28,8 @@
   ],
   "output_dir": "liepin_output",
   "database_path": "liepin_output/liepin_jobs.sqlite3",
-  "site_dir": "docs"
+  "site_dir": "docs",
+  "recent_update_window_days": 14,
+  "min_allowed_snapshot_count": 60,
+  "min_allowed_snapshot_ratio": 0.75
 }
