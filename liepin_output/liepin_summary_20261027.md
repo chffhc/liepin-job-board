@@ -1,0 +1,82 @@
+# 猎聘增量抓取日报 - 20261027
+
+- 当前命中岗位数：125
+- 今日首次发现岗位数：0
+- 相对昨日新增岗位数：0
+- 今日更新岗位数：3
+- 近14天更新岗位数：42
+- 抓取页数：25
+
+## 已抓取页面
+- https://www.liepin.com/zpneironganquan/
+- https://www.liepin.com/zpneironganquan/pn1/
+- https://www.liepin.com/zpneironganquan/pn2/
+- https://www.liepin.com/zpneironganquan/pn3/
+- https://www.liepin.com/zpneironganquan/pn4/
+- https://www.liepin.com/zpneironganquanyunying/
+- https://www.liepin.com/zpneironganquanyunying/pn1/
+- https://www.liepin.com/zpneironganquanyunying/pn2/
+- https://www.liepin.com/zpneironganquanyunying/pn3/
+- https://www.liepin.com/zpneironganquanyunying/pn4/
+- https://www.liepin.com/zpfengkong/
+- https://www.liepin.com/zpfengkong/pn1/
+- https://www.liepin.com/zpfengkong/pn2/
+- https://www.liepin.com/zpfengkong/pn3/
+- https://www.liepin.com/zpfengkong/pn4/
+- https://www.liepin.com/zpfengkongyunying/
+- https://www.liepin.com/zpfengkongyunying/pn1/
+- https://www.liepin.com/zpfengkongyunying/pn2/
+- https://www.liepin.com/zpfengkongyunying/pn3/
+- https://www.liepin.com/zpfengkongyunying/pn4/
+- https://www.liepin.com/zpfengxianyunying/
+- https://www.liepin.com/zpfengxianyunying/pn1/
+- https://www.liepin.com/zpfengxianyunying/pn2/
+- https://www.liepin.com/zpfengxianyunying/pn3/
+- https://www.liepin.com/zpfengxianyunying/pn4/
+
+## 相对昨日新增
+- 今天相对昨天没有新增进入快照的目标岗位。
+
+## 近14天更新
+- 某长沙大型互联网公司 | 双休【风险运营分析师、风控合规】蚂蚁全资，有餐补 | 杭州 | 9-14k·14薪 | 今日更新 | https://www.liepin.com/a/78866205.shtml
+- 美团 | 机构风险运营 | 上海 | 30-55k·16薪 | 今日更新 | https://www.liepin.com/job/1985987193.shtml
+- 某长沙大型互联网公司 | （杭州）风险分析运营专家 | 杭州 | 9-13k | 今日更新 | https://www.liepin.com/a/81017175.shtml
+- 某深圳大型互联网公司 | 智能安全策略运营 成都-高新区 18万-36万·年 23岁-35岁 AIGC 内容安全、UGC 风控、反作弊、反诈等任一领域的策略经验 | 高新区 | 15-30k | 10月26日更新 | https://www.liepin.com/a/79073857.shtml
+- 德联易控 | 风控产品运营支持 | 北京-呼家楼 | 12-17k | 10月26日更新 | https://www.liepin.com/job/1984870171.shtml
+- 北京必来屋网络科技有限公司 | 风控运营专家（远程） | 北京-劲松 | 25-50k·15薪 | 10月26日更新 | https://www.liepin.com/job/1986231241.shtml
+- 北京必来屋网络科技有限公司 | 风控运营专家（远程） | 南山区 | 25-50k·15薪 | 10月26日更新 | https://www.liepin.com/job/1986231239.shtml
+- 北京必来屋网络科技有限公司 | 风控运营专家（远程） | 成都-白沙 | 25-50k·15薪 | 10月26日更新 | https://www.liepin.com/job/1986231245.shtml
+- 北京必来屋网络科技有限公司 | 风控运营专家（远程） | 杭州-小河 | 25-50k·15薪 | 10月26日更新 | https://www.liepin.com/job/1986231237.shtml
+- 北京必来屋网络科技有限公司 | 风控运营专家（远程） | 浦东新区 | 25-50k·15薪 | 10月26日更新 | https://www.liepin.com/job/1986231243.shtml
+- 某成都知名公司 | 风控运营总监 | 成都 | 35-50k | 10月26日更新 | https://www.liepin.com/a/79890015.shtml
+- 某深圳大型互联网公司 | 美股风控运营（夜班） | 北京 | 80-110k·17薪 | 10月26日更新 | https://www.liepin.com/a/80811221.shtml
+- 某深圳大型互联网公司 | 美股风控运营（夜班） | 深圳 | 80-110k·16薪 | 10月26日更新 | https://www.liepin.com/a/80811291.shtml
+- 字节跳动 | 风险运营 | 北京-慈云寺 | 20-40k·15薪 | 10月26日更新 | https://www.liepin.com/job/1976120531.shtml
+- 字节跳动 | 风险运营（蓝军、事故方向） | 北京-慈云寺 | 20-35k·15薪 | 10月26日更新 | https://www.liepin.com/job/1982869117.shtml
+- 字节跳动 | 风控情报运营专家-TikTok Shop | 上海-新江湾城 | 20-40k·15薪 | 10月26日更新 | https://www.liepin.com/job/1984309931.shtml
+- 某大型互联网公司 | 风险分析运营专家 | 杭州 | 9-13k·14薪 | 10月26日更新 | https://www.liepin.com/a/80984285.shtml
+- 上海聚均科技有限公司 | 运营风控岗 | 上海-联洋 | 15-30k | 10月23日更新 | https://www.liepin.com/job/1980561157.shtml
+- 字节跳动 | 内容安全治理策略运营（IM方向） - 抖音社区治理 | 海淀区 | 20-40k·15薪 | 10月22日更新 | https://www.liepin.com/job/1986292861.shtml
+- 阿里巴巴集团 | 集团安全部-策略运营-业务风控 | 杭州 | 10-20k | 10月22日更新 | https://www.liepin.com/job/1986235805.shtml
+- 杰西圈(大连)科技有限公司 | 高级风控运营 | 虹口区 | 20-30k | 10月22日更新 | https://www.liepin.com/job/1986278381.shtml
+- 某深圳大型互联网公司 | 美股风控运营（居家远程办公） | 深圳 | 30-50k | 10月22日更新 | https://www.liepin.com/a/79599655.shtml
+- 某深圳大型互联网公司 | 风控运营（美股） | 深圳 | 30-60k | 10月22日更新 | https://www.liepin.com/a/79536851.shtml
+- 阿里巴巴集团 | 集团安全部-智能体安全运营-Harness风险治理 | 杭州 | 10-20k | 10月22日更新 | https://www.liepin.com/job/1985695581.shtml
+- 某知名互联网公司 | 美股风控运营 | 深圳 | 40-70k | 10月21日更新 | https://www.liepin.com/a/79445981.shtml
+- 度小满 | 联合运营风险策略专家(A213176) | 浦东新区 | 35-50k·16薪 | 10月21日更新 | https://www.liepin.com/job/1984998967.shtml
+- 某知名公司 | 风险分析运营专员 | 杭州 | 6-9k | 10月21日更新 | https://www.liepin.com/a/80679419.shtml
+- 字节跳动 | 风险服务运营专家-抖音电商 | 北京-牡丹园 | 25-65k·15薪 | 10月20日更新 | https://www.liepin.com/job/1977307071.shtml
+- 字节跳动 | 风险服务运营专家-抖音电商 | 杨浦区 | 25-65k·15薪 | 10月20日更新 | https://www.liepin.com/job/1977307015.shtml
+- 字节跳动 | 风险线索挖掘运营-CQC | 北京-慈云寺 | 20-45k·15薪 | 10月20日更新 | https://www.liepin.com/job/1986224439.shtml
+- 字节跳动 | 抖音账号治理策略运营（账号行为风控） - 抖音社区治理 | 余杭区 | 20-40k·15薪 | 10月19日更新 | https://www.liepin.com/job/1986206743.shtml
+- 杰西圈(大连)科技有限公司 | 行业独角兽诚聘风控运营专家 | 虹口区 | 20-40k | 10月19日更新 | https://www.liepin.com/job/1986188343.shtml
+- 杰西圈(大连)科技有限公司 | 风控运营专家（国际物流 / 货代） | 虹口区 | 20-40k | 10月19日更新 | https://www.liepin.com/job/1986188265.shtml
+- 阿里巴巴集团 | 阿里妈妈-风险策略运营-杭州 | 杭州 | 30-50k | 10月19日更新 | https://www.liepin.com/job/1986197847.shtml
+- 阿里巴巴集团 | 集团安全部-内容安全能力运营及交付-直播和短视频方向 | 杭州 | 10-20k | 10月19日更新 | https://www.liepin.com/job/1985133887.shtml
+- 字节跳动 | 大模型运营（内容风控方向） | 北京-慈云寺 | 30-60k·15薪 | 10月19日更新 | https://www.liepin.com/job/1986060969.shtml
+- 某深圳网络/信息安全公司 | 美股风控运营（夜班） | 上海 | 35-50k·18薪 | 10月16日更新 | https://www.liepin.com/a/80819357.shtml
+- 字节跳动 | 供应链运营岗（风控） - 芯片方向 北/上 | 北京-中关村 | 30-60k | 10月15日更新 | https://www.liepin.com/job/1986135823.shtml
+- 字节跳动 | 供应链运营岗（风控） - 芯片方向 北/上 | 浦东新区 | 30-60k | 10月15日更新 | https://www.liepin.com/job/1986135821.shtml
+- 哔哩哔哩 | 内容安全策略运营 | 上海-五角场 | 15-25k·15薪 | 10月13日更新 | https://www.liepin.com/job/1986087699.shtml
+- 某深圳大型新能源公司 | 支付风控运营专员(拒付业务方向) 10-14K | 南山区 | 10-14k·13薪 | 10月13日更新 | https://www.liepin.com/a/80673033.shtml
+- 某深圳大型新能源公司 | 支付风控运营专员(拒付业务方向) 14K 双休 早九晚六 | 南山区 | 10-14k | 10月13日更新 | https://www.liepin.com/a/80678643.shtml
